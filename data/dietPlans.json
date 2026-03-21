@@ -1,0 +1,46 @@
+{
+  "muscle-gain": {
+    "label": "Muscle Gain",
+    "tip": "Eat in a slight calorie surplus. Prioritise protein in every meal.",
+    "meals": [
+      {
+        "name": "Breakfast",
+        "items": ["5 egg omelette with spinach", "2 slices whole grain toast", "1 banana", "1 glass whole milk"]
+      },
+      {
+        "name": "Lunch",
+        "items": ["200g grilled chicken breast", "1 cup brown rice", "Mixed salad with olive oil", "1 apple"]
+      },
+      {
+        "name": "Dinner",
+        "items": ["200g salmon fillet", "Sweet potato mash", "Steamed broccoli", "1 cup Greek yoghurt"]
+      },
+      {
+        "name": "Snack",
+        "items": ["Handful of almonds", "1 scoop whey protein shake", "1 orange"]
+      }
+    ]
+  },
+  "fat-loss": {
+    "label": "Fat Loss",
+    "tip": "Eat in a moderate deficit. Keep protein high to preserve muscle.",
+    "meals": [
+      {
+        "name": "Breakfast",
+        "items": ["3 scrambled eggs", "1 slice whole grain toast", "Black coffee or green tea", "1 cup berries"]
+      },
+      {
+        "name": "Lunch",
+        "items": ["150g grilled chicken or tuna", "Large mixed salad (no croutons)", "Balsamic vinegar dressing", "1 small apple"]
+      },
+      {
+        "name": "Dinner",
+        "items": ["150g white fish or lean beef", "Steamed vegetables (broccoli, zucchini, carrots)", "1/2 cup quinoa", "Lemon and herbs for flavour"]
+      },
+      {
+        "name": "Snack",
+        "items": ["Low-fat cottage cheese", "Cucumber slices", "Sparkling water"]
+      }
+    ]
+  }
+}

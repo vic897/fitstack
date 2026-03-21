@@ -1,0 +1,22 @@
+[
+  { "id": 1, "name": "Barbell Squat", "muscle": "Legs", "difficulty": "Intermediate", "equipment": "Barbell", "description": "A compound lower-body movement targeting quads, hamstrings, and glutes." },
+  { "id": 2, "name": "Deadlift", "muscle": "Back", "difficulty": "Advanced", "equipment": "Barbell", "description": "Full-body pull movement. Builds posterior chain strength." },
+  { "id": 3, "name": "Bench Press", "muscle": "Chest", "difficulty": "Intermediate", "equipment": "Barbell", "description": "Horizontal push targeting pecs, front delts, and triceps." },
+  { "id": 4, "name": "Pull-Up", "muscle": "Back", "difficulty": "Intermediate", "equipment": "Bodyweight", "description": "Vertical pull that builds lats and biceps." },
+  { "id": 5, "name": "Overhead Press", "muscle": "Shoulders", "difficulty": "Intermediate", "equipment": "Barbell", "description": "Presses the bar overhead. Targets delts and upper chest." },
+  { "id": 6, "name": "Dumbbell Curl", "muscle": "Arms", "difficulty": "Beginner", "equipment": "Dumbbell", "description": "Isolates the biceps with a supinated curl." },
+  { "id": 7, "name": "Tricep Dip", "muscle": "Arms", "difficulty": "Beginner", "equipment": "Bodyweight", "description": "Targets the triceps using parallel bars or a bench." },
+  { "id": 8, "name": "Plank", "muscle": "Core", "difficulty": "Beginner", "equipment": "Bodyweight", "description": "Isometric hold that builds core stability and endurance." },
+  { "id": 9, "name": "Romanian Deadlift", "muscle": "Legs", "difficulty": "Intermediate", "equipment": "Barbell", "description": "Hip-hinge movement targeting hamstrings and glutes." },
+  { "id": 10, "name": "Incline Dumbbell Press", "muscle": "Chest", "difficulty": "Intermediate", "equipment": "Dumbbell", "description": "Targets the upper chest with an angled press." },
+  { "id": 11, "name": "Lat Pulldown", "muscle": "Back", "difficulty": "Beginner", "equipment": "Cable Machine", "description": "Cable version of pull-up. Great for beginners building lat strength." },
+  { "id": 12, "name": "Leg Press", "muscle": "Legs", "difficulty": "Beginner", "equipment": "Machine", "description": "Machine-based quad and glute builder. Easier to load than squats." },
+  { "id": 13, "name": "Cable Row", "muscle": "Back", "difficulty": "Beginner", "equipment": "Cable Machine", "description": "Horizontal pull targeting mid-back and rhomboids." },
+  { "id": 14, "name": "Lateral Raise", "muscle": "Shoulders", "difficulty": "Beginner", "equipment": "Dumbbell", "description": "Isolates the side deltoid for shoulder width." },
+  { "id": 15, "name": "Face Pull", "muscle": "Shoulders", "difficulty": "Beginner", "equipment": "Cable Machine", "description": "Targets rear delts and rotator cuff. Great for shoulder health." },
+  { "id": 16, "name": "Leg Curl", "muscle": "Legs", "difficulty": "Beginner", "equipment": "Machine", "description": "Isolates the hamstrings on a lying or seated machine." },
+  { "id": 17, "name": "Dumbbell Row", "muscle": "Back", "difficulty": "Beginner", "equipment": "Dumbbell", "description": "Unilateral row for mid-back and lats." },
+  { "id": 18, "name": "Russian Twist", "muscle": "Core", "difficulty": "Beginner", "equipment": "Bodyweight", "description": "Rotational core exercise targeting obliques." },
+  { "id": 19, "name": "Hip Thrust", "muscle": "Legs", "difficulty": "Intermediate", "equipment": "Barbell", "description": "Glute-dominant hip extension. Best direct glute builder." },
+  { "id": 20, "name": "Push-Up", "muscle": "Chest", "difficulty": "Beginner", "equipment": "Bodyweight", "description": "Classic bodyweight push. Builds chest, triceps, and core stability." }
+]
