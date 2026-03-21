@@ -1,65 +1,35 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
+import { getUserContext, type UserContext } from "@/lib/db/userContext";
 
-// ── Types ──────────────────────────────────────────────────────
 type Message = {
   id: number;
   role: "user" | "assistant";
   content: string;
 };
 
-// ── Mock responses (replaced by Groq in Step 5) ───────────────
-const mockResponses: Record<string, string> = {
-  default:
-    "Great question! As your AI fitness coach, I'd suggest focusing on consistency above all else. Whether your goal is muscle gain, fat loss, or endurance — showing up regularly beats any perfect plan you don't follow. What specific aspect of your training or diet can I help you with?",
-  protein:
-    "For muscle gain, aim for 1.6–2.2g of protein per kg of bodyweight daily. Good sources include chicken breast, eggs, Greek yoghurt, tuna, and whey protein. Spread your intake across 3–4 meals for best results.",
-  workout:
-    "A solid beginner workout plan hits each muscle group 2× per week with compound lifts — squat, deadlift, bench press, and row. Start with 3 sets of 8–10 reps, rest 90 seconds between sets, and add a little weight each week.",
-  diet:
-    "Keep your diet simple: high protein, mostly whole foods, and a calorie intake matched to your goal. For fat loss, a 300–500 calorie deficit works well. For muscle gain, a 200–300 calorie surplus is enough to build without excess fat.",
-  sleep:
-    "Sleep is when your body actually builds muscle and burns fat. Aim for 7–9 hours. Poor sleep raises cortisol, kills recovery, and increases cravings — it undermines almost every fitness effort. Treat sleep as part of your training.",
-  cardio:
-    "Cardio is great for heart health and fat loss, but don't overdo it if muscle gain is your goal. 2–3 sessions of 20–30 minutes per week is plenty. HIIT burns more calories in less time, but steady-state cardio is easier to recover from.",
-  beginner:
-    "As a beginner, your biggest advantage is that almost everything works. Focus on: (1) learning the main compound lifts with good form, (2) hitting the gym 3× per week consistently, (3) eating enough protein, and (4) sleeping well. Don't overthink it — just start.",
-};
-
-function getMockResponse(input: string): string {
-  const lower = input.toLowerCase();
-  if (lower.includes("protein")) return mockResponses.protein;
-  if (lower.includes("workout") || lower.includes("training") || lower.includes("exercise"))
-    return mockResponses.workout;
-  if (lower.includes("diet") || lower.includes("eat") || lower.includes("food") || lower.includes("meal"))
-    return mockResponses.diet;
-  if (lower.includes("sleep") || lower.includes("recovery") || lower.includes("rest"))
-    return mockResponses.sleep;
-  if (lower.includes("cardio") || lower.includes("run") || lower.includes("hiit"))
-    return mockResponses.cardio;
-  if (lower.includes("beginner") || lower.includes("start") || lower.includes("new"))
-    return mockResponses.beginner;
-  return mockResponses.default;
-}
-
-// ── Suggested prompts ─────────────────────────────────────────
 const suggestions = [
   "How much protein do I need daily?",
-  "What's the best workout for beginners?",
+  "What's the best workout for my goal?",
   "How do I lose fat without losing muscle?",
   "Is cardio necessary for muscle gain?",
   "What should I eat before a workout?",
   "How important is sleep for fitness?",
 ];
 
-// ── Components ────────────────────────────────────────────────
+const goalLabel: Record<string, string> = {
+  "muscle-gain": "Muscle Gain",
+  "fat-loss":    "Fat Loss",
+  "endurance":   "Endurance",
+};
+
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      {/* Avatar */}
       <div
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm ${
           isUser
@@ -69,8 +39,6 @@ function MessageBubble({ message }: { message: Message }) {
       >
         {isUser ? "U" : "🤖"}
       </div>
-
-      {/* Bubble */}
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
@@ -99,54 +67,145 @@ function TypingIndicator() {
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────
-const WELCOME: Message = {
-  id: 0,
-  role: "assistant",
-  content:
-    "Hey! I'm your AI gym coach 👋 I can help with workout plans, exercise form, diet advice, recovery, and anything else fitness-related. What's on your mind?",
-};
-
 export default function CoachPage() {
-  const [messages, setMessages] = useState<Message[]>([WELCOME]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [messages, setMessages]     = useState<Message[]>([]);
+  const [input, setInput]           = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [context, setContext]       = useState<UserContext | null>(null);
+  const [ctxLoading, setCtxLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef  = useRef<HTMLTextAreaElement>(null);
+  const searchParams = useSearchParams();
 
-  // Auto-scroll to bottom on new message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    getUserContext().then((ctx) => {
+      setContext(ctx);
+      setCtxLoading(false);
+
+      const name     = ctx.name ? `, ${ctx.name}` : "";
+      const goalPart = ctx.latestGoal
+        ? ` I can see your goal is **${goalLabel[ctx.latestGoal]}** at **${ctx.latestLevel}** level.`
+        : "";
+
+      const welcome: Message = {
+        id:      0,
+        role:    "assistant",
+        content: `Hey${name}! I'm your AI gym coach 👋${goalPart} Ask me anything about workouts, diet, recovery, or supplements — I'll give you straight, practical answers.`,
+      };
+      setMessages([welcome]);
+
+      // ── BMI auto-send ────────────────────────────────────────
+      const bmi      = searchParams.get("bmi");
+      const category = searchParams.get("category");
+      const height   = searchParams.get("height");
+      const weight   = searchParams.get("weight");
+      const unit     = searchParams.get("unit");
+
+      if (bmi && category) {
+        const weightUnit  = unit === "imperial" ? "lbs" : "kg";
+        const heightLabel = unit === "imperial" ? height : `${height} cm`;
+        const autoQuery   = `My BMI is ${bmi} (${category}). My height is ${heightLabel} and my weight is ${weight} ${weightUnit}. Based on this, what should my fitness and diet focus be? Give me specific advice.`;
+        setTimeout(() => sendMessageWithContext(autoQuery, ctx), 600);
+        return;
+      }
+
+      // ── Workout plan auto-send ───────────────────────────────
+      const source  = searchParams.get("source");
+      const wGoal   = searchParams.get("goal");
+      const wLevel  = searchParams.get("level");
+      const summary = searchParams.get("summary");
+
+      if (source === "workout" && wGoal && wLevel && summary) {
+        const autoQuery = `I just generated a ${goalLabel[wGoal] ?? wGoal} workout plan at ${wLevel} level. Here's a summary of my training days: ${summary}. Can you give me specific tips for this plan? Include advice on rest periods, progressive overload, and anything I should watch out for as a ${wLevel}.`;
+        setTimeout(() => sendMessageWithContext(autoQuery, ctx), 600);
+      }
+    });
+  }, []);
+
+  async function sendMessageWithContext(content: string, ctx: UserContext) {
+    const userMsg: Message = { id: Date.now(), role: "user", content };
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          messages: [{ role: "user", content }],
+          context:  ctx,
+        }),
+      });
+
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: "assistant", content: data.reply },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id:      Date.now() + 1,
+          role:    "assistant",
+          content: "Sorry, something went wrong. Please try again.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+      inputRef.current?.focus();
+    }
+  }
 
   async function sendMessage(text?: string) {
     const content = (text ?? input).trim();
     if (!content || loading) return;
 
-    const userMsg: Message = {
-      // eslint-disable-next-line react-hooks/purity
-      id: Date.now(),
-      role: "user",
-      content,
-    };
-
+    const userMsg: Message = { id: Date.now(), role: "user", content };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
-    // Simulate network delay (replaced by real API in Step 5)
-    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 800));
+    const history = messages
+      .filter((m) => m.id !== 0)
+      .map((m) => ({ role: m.role, content: m.content }));
 
-    const reply: Message = {
-      // eslint-disable-next-line react-hooks/purity
-      id: Date.now() + 1,
-      role: "assistant",
-      content: getMockResponse(content),
-    };
+    try {
+      const res = await fetch("/api/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          messages: [...history, { role: "user", content }],
+          context:  context ?? {},
+        }),
+      });
 
-    setMessages((prev) => [...prev, reply]);
-    setLoading(false);
-    inputRef.current?.focus();
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: "assistant", content: data.reply },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id:      Date.now() + 1,
+          role:    "assistant",
+          content: "Sorry, something went wrong. Check your connection and try again.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+      inputRef.current?.focus();
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -157,17 +216,26 @@ export default function CoachPage() {
   }
 
   function clearChat() {
-    setMessages([WELCOME]);
+    const name     = context?.name ? `, ${context.name}` : "";
+    const goalPart = context?.latestGoal
+      ? ` I can see your goal is **${goalLabel[context.latestGoal]}** at **${context.latestLevel}** level.`
+      : "";
+    setMessages([
+      {
+        id:      0,
+        role:    "assistant",
+        content: `Hey${name}! I'm your AI gym coach 👋${goalPart} Ask me anything about workouts, diet, recovery, or supplements.`,
+      },
+    ]);
     setInput("");
   }
 
-  const showSuggestions = messages.length === 1;
+  const showSuggestions = messages.length <= 1 && !loading;
 
   return (
     <div className="flex h-screen flex-col bg-gray-950 text-white">
       <Navbar />
 
-      {/* Chat window */}
       <div className="flex flex-1 flex-col overflow-hidden pt-16">
         {/* Chat header */}
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
@@ -179,28 +247,51 @@ export default function CoachPage() {
               <p className="text-sm font-bold">AI Gym Coach</p>
               <p className="flex items-center gap-1.5 text-xs text-gray-500">
                 <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                Online — powered by Groq AI
+                {ctxLoading
+                  ? "Loading your profile…"
+                  : context?.latestGoal
+                  ? `Goal: ${goalLabel[context.latestGoal]} · ${context.latestLevel}`
+                  : "Powered by Groq AI"}
               </p>
             </div>
           </div>
-          <button
-            onClick={clearChat}
-            className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-400 transition-colors hover:border-white/20 hover:text-white"
-          >
-            Clear chat
-          </button>
+
+          <div className="flex items-center gap-3">
+            {context?.latestWeight && (
+              <span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-400 sm:block">
+                ⚖️ {context.latestWeight} kg
+              </span>
+            )}
+            {context && context.totalWorkouts > 0 && (
+              <span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-400 sm:block">
+                📋 {context.totalWorkouts} plan{context.totalWorkouts > 1 ? "s" : ""}
+              </span>
+            )}
+            <button
+              onClick={clearChat}
+              className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-400 transition-colors hover:border-white/20 hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
         </div>
 
-        {/* Messages area */}
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto flex max-w-2xl flex-col gap-5">
+            {context?.latestGoal && messages.length <= 1 && (
+              <div className="rounded-xl border border-green-400/20 bg-green-400/5 px-4 py-3 text-xs text-green-400">
+                ✓ I have your profile — goal, level
+                {context.latestWeight ? ", and latest weight" : ""}. My advice will be tailored to you.
+              </div>
+            )}
+
             {messages.map((m) => (
               <MessageBubble key={m.id} message={m} />
             ))}
 
             {loading && <TypingIndicator />}
 
-            {/* Suggested questions — only before first user message */}
             {showSuggestions && (
               <div className="mt-2">
                 <p className="mb-3 text-xs font-semibold text-gray-500">
@@ -232,7 +323,11 @@ export default function CoachPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about workouts, diet, recovery…"
+              placeholder={
+                context?.name
+                  ? `Ask your coach anything, ${context.name}…`
+                  : "Ask about workouts, diet, recovery…"
+              }
               rows={1}
               className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition focus:border-green-400/50 focus:ring-1 focus:ring-green-400/20"
               style={{ maxHeight: "120px" }}
@@ -248,18 +343,13 @@ export default function CoachPage() {
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-400 text-gray-950 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
               aria-label="Send"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="h-5 w-5"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
                 <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
               </svg>
             </button>
           </div>
           <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-gray-600">
-            Enter to send · Shift+Enter for new line · Currently using mock responses
+            Enter to send · Shift+Enter for new line
           </p>
         </div>
       </div>

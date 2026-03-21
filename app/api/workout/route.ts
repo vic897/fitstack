@@ -1,99 +1,282 @@
 import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
+import { createClient } from "@supabase/supabase-js";
 
-
-type DayPlan = { day: string; focus: string; exercises: string[] };
-
-const workoutPlans: Record<string, Record<string, DayPlan[]>> = {
-  "muscle-gain": {
-    beginner: [
-      { day: "Monday",    focus: "Full Body A",       exercises: ["Barbell Squat 3×8", "Bench Press 3×8", "Dumbbell Row 3×10", "Plank 3×30s"] },
-      { day: "Tuesday",   focus: "Rest / Walk",        exercises: ["Light 20-min walk", "Stretching"] },
-      { day: "Wednesday", focus: "Full Body B",        exercises: ["Deadlift 3×6", "Overhead Press 3×8", "Lat Pulldown 3×10", "Dumbbell Curl 3×12"] },
-      { day: "Thursday",  focus: "Rest",               exercises: ["Active recovery", "Foam rolling"] },
-      { day: "Friday",    focus: "Full Body A",        exercises: ["Barbell Squat 3×10", "Bench Press 3×10", "Cable Row 3×10", "Plank 3×40s"] },
-      { day: "Saturday",  focus: "Optional Cardio",    exercises: ["20-min jog or cycling"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    intermediate: [
-      { day: "Monday",    focus: "Chest & Triceps",    exercises: ["Bench Press 4×8", "Incline DB Press 3×10", "Cable Fly 3×12", "Tricep Dip 3×12"] },
-      { day: "Tuesday",   focus: "Back & Biceps",      exercises: ["Deadlift 4×5", "Pull-Up 4×8", "Cable Row 3×10", "Dumbbell Curl 3×12"] },
-      { day: "Wednesday", focus: "Rest",               exercises: ["Active recovery"] },
-      { day: "Thursday",  focus: "Legs",               exercises: ["Barbell Squat 4×8", "Romanian Deadlift 3×10", "Leg Press 3×12", "Leg Curl 3×12"] },
-      { day: "Friday",    focus: "Shoulders & Core",   exercises: ["Overhead Press 4×8", "Lateral Raise 3×15", "Face Pull 3×15", "Plank 3×45s"] },
-      { day: "Saturday",  focus: "Arms",               exercises: ["Dumbbell Curl 4×12", "Tricep Dip 4×12", "Hammer Curl 3×12"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    advanced: [
-      { day: "Monday",    focus: "Heavy Chest",        exercises: ["Bench Press 5×5", "Weighted Dip 4×8", "Incline DB Press 4×10", "Cable Fly 3×15"] },
-      { day: "Tuesday",   focus: "Heavy Back",         exercises: ["Deadlift 5×3", "Weighted Pull-Up 4×6", "Barbell Row 4×8", "Face Pull 3×15"] },
-      { day: "Wednesday", focus: "Legs",               exercises: ["Barbell Squat 5×5", "Hip Thrust 4×8", "Romanian Deadlift 4×8", "Leg Curl 3×12"] },
-      { day: "Thursday",  focus: "Rest",               exercises: ["Active recovery", "Mobility work"] },
-      { day: "Friday",    focus: "Shoulders",          exercises: ["Overhead Press 5×5", "Arnold Press 3×10", "Lateral Raise 4×15", "Rear Delt Fly 3×15"] },
-      { day: "Saturday",  focus: "Arms & Core",        exercises: ["Barbell Curl 4×8", "Skull Crusher 4×10", "Russian Twist 3×20", "Hanging Leg Raise 3×15"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-  },
-  "fat-loss": {
-    beginner: [
-      { day: "Monday",    focus: "Full Body + Cardio", exercises: ["Push-Up 3×12", "Bodyweight Squat 3×15", "Dumbbell Row 3×12", "20-min jog"] },
-      { day: "Tuesday",   focus: "Cardio",             exercises: ["30-min brisk walk or cycling"] },
-      { day: "Wednesday", focus: "Full Body Circuit",  exercises: ["Plank 3×40s", "Leg Press 3×15", "Lat Pulldown 3×12", "15-min HIIT"] },
-      { day: "Thursday",  focus: "Rest",               exercises: ["Light stretching"] },
-      { day: "Friday",    focus: "Full Body + Cardio", exercises: ["Barbell Squat 3×10", "Overhead Press 3×10", "Cable Row 3×12", "20-min jog"] },
-      { day: "Saturday",  focus: "Cardio",             exercises: ["45-min walk or swim"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    intermediate: [
-      { day: "Monday",    focus: "Upper Body + HIIT",  exercises: ["Bench Press 4×10", "Pull-Up 3×8", "Overhead Press 3×10", "20-min HIIT"] },
-      { day: "Tuesday",   focus: "Lower Body",         exercises: ["Barbell Squat 4×10", "Romanian Deadlift 3×12", "Leg Curl 3×15", "25-min jog"] },
-      { day: "Wednesday", focus: "Cardio",             exercises: ["30-min steady-state cardio"] },
-      { day: "Thursday",  focus: "Full Body Circuit",  exercises: ["Deadlift 3×8", "Push-Up 3×15", "Dumbbell Row 3×12", "Plank 3×45s"] },
-      { day: "Friday",    focus: "Upper Body",         exercises: ["Incline DB Press 4×10", "Cable Row 4×12", "Lateral Raise 3×15", "Tricep Dip 3×12"] },
-      { day: "Saturday",  focus: "HIIT Cardio",        exercises: ["30-min HIIT session"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    advanced: [
-      { day: "Monday",    focus: "Heavy Upper + HIIT", exercises: ["Bench Press 5×5", "Weighted Pull-Up 4×6", "Overhead Press 4×8", "20-min HIIT"] },
-      { day: "Tuesday",   focus: "Heavy Lower",        exercises: ["Barbell Squat 5×5", "Romanian Deadlift 4×8", "Hip Thrust 4×10", "30-min jog"] },
-      { day: "Wednesday", focus: "Cardio",             exercises: ["40-min steady-state cardio"] },
-      { day: "Thursday",  focus: "Full Body Power",    exercises: ["Deadlift 5×3", "Push-Up 4×20", "Cable Row 4×10", "Plank 4×60s"] },
-      { day: "Friday",    focus: "Hypertrophy",        exercises: ["Incline DB Press 4×12", "Lat Pulldown 4×12", "Lateral Raise 4×15", "Face Pull 3×15"] },
-      { day: "Saturday",  focus: "HIIT + Core",        exercises: ["30-min HIIT", "Russian Twist 4×20", "Hanging Leg Raise 3×15"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-  },
-  endurance: {
-    beginner: [
-      { day: "Monday",    focus: "Easy Run",           exercises: ["20-min easy jog", "Dynamic stretching"] },
-      { day: "Tuesday",   focus: "Strength",           exercises: ["Bodyweight Squat 3×15", "Push-Up 3×12", "Plank 3×30s"] },
-      { day: "Wednesday", focus: "Cross-train",        exercises: ["30-min cycling or swimming"] },
-      { day: "Thursday",  focus: "Rest",               exercises: ["Light walk", "Stretching"] },
-      { day: "Friday",    focus: "Tempo Run",          exercises: ["25-min moderate-pace run"] },
-      { day: "Saturday",  focus: "Long Run",           exercises: ["35-min easy long run"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    intermediate: [
-      { day: "Monday",    focus: "Interval Run",       exercises: ["6×400m at fast pace", "2-min rest between sets"] },
-      { day: "Tuesday",   focus: "Strength",           exercises: ["Barbell Squat 3×10", "Pull-Up 3×8", "Plank 3×45s", "Leg Curl 3×12"] },
-      { day: "Wednesday", focus: "Easy Run",           exercises: ["30-min easy jog"] },
-      { day: "Thursday",  focus: "Cross-train",        exercises: ["45-min cycling or rowing"] },
-      { day: "Friday",    focus: "Tempo Run",          exercises: ["30-min tempo run at race pace"] },
-      { day: "Saturday",  focus: "Long Run",           exercises: ["50-min easy long run"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-    advanced: [
-      { day: "Monday",    focus: "Speed Work",         exercises: ["8×400m at max pace", "90s rest between sets"] },
-      { day: "Tuesday",   focus: "Strength",           exercises: ["Deadlift 4×6", "Weighted Pull-Up 4×6", "Hip Thrust 3×10", "Hanging Leg Raise 3×15"] },
-      { day: "Wednesday", focus: "Moderate Run",       exercises: ["40-min moderate run"] },
-      { day: "Thursday",  focus: "Cross-train",        exercises: ["60-min cycling or rowing"] },
-      { day: "Friday",    focus: "Tempo Run",          exercises: ["40-min tempo run at race pace"] },
-      { day: "Saturday",  focus: "Long Run",           exercises: ["70-min easy long run"] },
-      { day: "Sunday",    focus: "Rest",               exercises: ["Full rest day"] },
-    ],
-  },
+// ── In-memory cache — persists across requests in the same instance ─
+type CacheEntry = {
+  data: Exercise[];
+  cachedAt: number;
 };
 
+const exerciseCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 1000 * 60 * 30; // 30 minutes
+
+function getCached(key: string): Exercise[] | null {
+  const entry = exerciseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > CACHE_TTL) {
+    exerciseCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key: string, data: Exercise[]): void {
+  exerciseCache.set(key, { data, cachedAt: Date.now() });
+}
+
+type Exercise = {
+  name: string;
+  muscle_group: string;
+  equipment: string;
+  difficulty: string;
+};
+
+type DayPlan = {
+  day: string;
+  focus: string;
+  exercises: string[];
+};
+
+// ── Fetch exercises from Supabase ───────────────────────────────
+async function fetchExercisesForPlan(
+  goal: string,
+  level: string
+): Promise<Exercise[]> {
+  const cacheKey = `${goal}-${level}`;
+
+  // Return cached if available
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log(`Cache hit: ${cacheKey} (${cached.length} exercises)`);
+    return cached;
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const muscleGroups =
+    goal === "endurance"
+      ? ["Cardio", "Legs", "Core"]
+      : ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core"];
+
+  const difficultyMap: Record<string, string[]> = {
+    beginner:     ["beginner"],
+    intermediate: ["beginner", "intermediate"],
+    advanced:     ["beginner", "intermediate", "advanced"],
+  };
+  const difficulties = difficultyMap[level] ?? ["beginner"];
+
+  const { data } = await supabase
+    .from("exercises")
+    .select("name, muscle_group, equipment, difficulty")
+    .in("muscle_group", muscleGroups)
+    .in("difficulty", difficulties)
+    .order("muscle_group", { ascending: true });
+
+  const exercises = data ?? [];
+
+  // Store in cache
+  setCache(cacheKey, exercises);
+  console.log(`Cache miss: ${cacheKey} — fetched ${exercises.length} exercises`);
+
+  return exercises;
+}
+
+// ── Build a strict, structured prompt ──────────────────────────
+function buildPrompt(
+  goal: string,
+  level: string,
+  exercises: Exercise[]
+): string {
+  const goalDescriptions: Record<string, string> = {
+    "muscle-gain": "building muscle mass and strength (hypertrophy focus)",
+    "fat-loss":    "burning fat while preserving muscle (higher reps, shorter rest)",
+    "endurance":   "improving cardiovascular endurance and stamina",
+  };
+
+  const daysMap: Record<string, number> = {
+    beginner:     3,
+    intermediate: 5,
+    advanced:     6,
+  };
+
+  const repScheme: Record<string, string> = {
+    "muscle-gain": "3-5 sets of 6-12 reps for compound lifts, 3 sets of 10-15 for isolation",
+    "fat-loss":    "3-4 sets of 12-20 reps with 45-60s rest",
+    "endurance":   "2-4 sets of 15-20 reps or timed sets (30-60s)",
+  };
+
+  const trainingDays = daysMap[level] ?? 3;
+  const restDays     = 7 - trainingDays;
+  const goalDesc     = goalDescriptions[goal] ?? goal;
+  const reps         = repScheme[goal] ?? "3 sets of 10-12 reps";
+
+  // Group exercises by muscle and build a numbered list
+  const grouped = exercises.reduce<Record<string, string[]>>((acc, ex) => {
+    if (!acc[ex.muscle_group]) acc[ex.muscle_group] = [];
+    acc[ex.muscle_group].push(ex.name);
+    return acc;
+  }, {});
+
+  const exerciseList = Object.entries(grouped)
+    .map(([muscle, exs]) => `[${muscle}]\n${exs.map((e, i) => `  ${i + 1}. ${e}`).join("\n")}`)
+    .join("\n\n");
+
+  // Build an exact output example so the AI knows the format
+  const exampleOutput =
+    goal === "endurance"
+      ? `Day 1 - Cardio + Core
+- Treadmill Run: 3x20min
+- Plank: 3x60s
+- Mountain Climber: 3x20
+
+Day 2 - Rest
+
+Day 3 - Legs + Cardio
+- Barbell Squat: 3x15
+- Jump Rope: 3x3min
+- Box Jump: 3x12`
+      : `Day 1 - Chest + Triceps
+- Barbell Bench Press: 4x8
+- Incline Dumbbell Press: 3x10
+- Tricep Pushdown: 3x12
+- Diamond Push-Up: 3x15
+
+Day 2 - Rest
+
+Day 3 - Back + Biceps
+- Lat Pulldown: 4x10
+- Seated Cable Row: 3x12
+- Dumbbell Curl: 3x12`;
+
+  return `You are a certified personal trainer. Create a ${trainingDays}-day workout plan.
+
+GOAL: ${goalDesc}
+LEVEL: ${level}
+TRAINING DAYS: ${trainingDays} days, ${restDays} rest day(s)
+REP SCHEME: ${reps}
+
+════════════════════════════════════════
+AVAILABLE EXERCISES — USE ONLY THESE:
+════════════════════════════════════════
+${exerciseList}
+
+════════════════════════════════════════
+OUTPUT FORMAT — FOLLOW EXACTLY:
+════════════════════════════════════════
+${exampleOutput}
+
+════════════════════════════════════════
+STRICT RULES:
+════════════════════════════════════════
+1. ONLY use exercise names from the list above — word for word, no variations
+2. Every training day MUST have 4-6 exercises
+3. Rest days format: "Day X - Rest" with no exercises listed
+4. Every exercise line MUST include sets x reps (e.g. 3x10, 4x8, 3x60s)
+5. Spread muscle groups across days — no same muscle group two days in a row
+6. Do NOT add any text before Day 1 or after the last day
+7. Do NOT add tips, explanations, or notes of any kind
+8. Do NOT number the days differently — use exactly: Day 1, Day 2, Day 3...`;
+}
+
+// ── Validate that exercises in plan exist in DB ─────────────────
+function validateAndCleanPlan(
+  plan: DayPlan[],
+  availableExercises: Exercise[]
+): DayPlan[] {
+  const validNames = new Set(
+    availableExercises.map((e) => e.name.toLowerCase())
+  );
+
+  return plan.map((day) => {
+    if (day.focus.toLowerCase() === "rest") {
+      return { ...day, exercises: ["Full rest day"] };
+    }
+
+    // Keep only exercises that exist in DB (strip sets/reps for matching)
+    const cleanedExercises = day.exercises.filter((ex) => {
+      // Extract just the exercise name before the colon
+      const namePart = ex.split(":")[0].replace(/^[-•]\s*/, "").trim().toLowerCase();
+      return validNames.has(namePart);
+    });
+
+    // If validation removed too many — keep original (AI might have formatted differently)
+    return {
+      ...day,
+      exercises: cleanedExercises.length >= 2 ? cleanedExercises : day.exercises,
+    };
+  });
+}
+
+// ── Parse AI text response into structured objects ──────────────
+function parseAIResponse(text: string): DayPlan[] {
+  const lines = text
+    .trim()
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+
+  const plan: DayPlan[] = [];
+  let current: DayPlan | null = null;
+
+  for (const line of lines) {
+    // Match "Day 1 - Focus Area" or "Day 1 – Focus Area"
+    const dayMatch = line.match(/^Day\s+(\d+)\s*[-–:]\s*(.+)$/i);
+    if (dayMatch) {
+      if (current) plan.push(current);
+      current = {
+        day:       `Day ${dayMatch[1]}`,
+        focus:     dayMatch[2].trim(),
+        exercises: [],
+      };
+      continue;
+    }
+
+    // Match exercise lines starting with - or •
+    if (current && !current.focus.toLowerCase().includes("rest")) {
+      if (line.startsWith("-") || line.startsWith("•") || line.startsWith("*")) {
+        const exercise = line.replace(/^[-•*]\s*/, "").trim();
+        if (exercise.length > 2) current.exercises.push(exercise);
+      }
+    }
+  }
+
+  // Push last day
+  if (current) plan.push(current);
+
+  // Ensure we always have 7 days
+  const existingDays = new Set(plan.map((d) => d.day));
+  for (let i = 1; i <= 7; i++) {
+    if (!existingDays.has(`Day ${i}`)) {
+      plan.push({
+        day:       `Day ${i}`,
+        focus:     "Rest",
+        exercises: ["Full rest day"],
+      });
+    }
+  }
+
+  // Sort by day number
+  return plan.sort((a, b) => {
+    const numA = parseInt(a.day.replace(/\D/g, ""));
+    const numB = parseInt(b.day.replace(/\D/g, ""));
+    return numA - numB;
+  });
+}
+
+// ── Route handler ───────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "GROQ_API_KEY not configured" },
+      { status: 500 }
+    );
+  }
+
   try {
     const { goal, level } = await req.json();
 
@@ -104,20 +287,67 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const plan = workoutPlans[goal]?.[level];
-
-    if (!plan) {
+    // 1 — Fetch exercises
+    const exercises = await fetchExercisesForPlan(goal, level);
+    if (exercises.length === 0) {
       return NextResponse.json(
-        { error: "No plan found for this goal and level combination" },
+        { error: "No exercises found for this combination" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ plan });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to generate workout plan" },
-      { status: 500 }
+    // 2 — Build prompt
+    const prompt = buildPrompt(goal, level, exercises);
+
+    // 3 — Call Groq with strict settings
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      model:       "llama-3.3-70b-versatile",
+      temperature: 0.3, // low = consistent structure
+      max_tokens:  1200,
+      messages: [
+        {
+          role:    "system",
+          content: "You are a certified personal trainer. You output ONLY structured workout plans in the exact format requested. No explanations. No preamble. No notes. Just the plan.",
+        },
+        {
+          role:    "user",
+          content: prompt,
+        },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? "";
+
+    if (!raw.trim()) {
+      return NextResponse.json(
+        { error: "AI returned empty response" },
+        { status: 500 }
+      );
+    }
+
+    // 4 — Parse and validate
+    const parsed   = parseAIResponse(raw);
+    const validated = validateAndCleanPlan(parsed, exercises);
+
+    // 5 — Sanity check — at least 3 training days
+    const trainingDays = validated.filter(
+      (d) => !d.focus.toLowerCase().includes("rest")
     );
+
+    if (trainingDays.length < 2) {
+      console.error("Plan parsing failed. Raw output:\n", raw);
+      return NextResponse.json(
+        { error: "Plan generation failed — please try again" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ plan: validated });
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Workout API error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
