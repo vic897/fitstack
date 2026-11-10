@@ -203,12 +203,10 @@ export default function WorkoutPage() {
 
       clearInterval(ticker);
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Failed to generate plan");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !Array.isArray(data?.plan)) {
+        throw new Error(data?.error ?? `Failed to generate plan (${res.status})`);
       }
-
-      const data = await res.json();
       setPlan(data.plan);
 
       const { error: saveError } = await saveWorkout(

@@ -141,20 +141,23 @@ export default function CoachPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!res.ok || typeof data?.reply !== "string") {
+        throw new Error(data?.error ?? `API error (${res.status})`);
+      }
 
       setMessages((prev) => [
         ...prev,
         { id: Date.now() + 1, role: "assistant", content: data.reply },
       ]);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Please try again.";
       setMessages((prev) => [
         ...prev,
         {
           id:      Date.now() + 1,
           role:    "assistant",
-          content: "Sorry, something went wrong. Please try again.",
+          content: `Sorry, something went wrong: ${msg}`,
         },
       ]);
     } finally {
@@ -186,20 +189,26 @@ export default function CoachPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!res.ok || typeof data?.reply !== "string") {
+        throw new Error(data?.error ?? `API error (${res.status})`);
+      }
 
       setMessages((prev) => [
         ...prev,
         { id: Date.now() + 1, role: "assistant", content: data.reply },
       ]);
-    } catch {
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Check your connection and try again.";
       setMessages((prev) => [
         ...prev,
         {
           id:      Date.now() + 1,
           role:    "assistant",
-          content: "Sorry, something went wrong. Check your connection and try again.",
+          content: `Sorry, something went wrong: ${msg}`,
         },
       ]);
     } finally {

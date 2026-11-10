@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
+import {
+  extractCompletionText,
+  formatGroqError,
+  getGroqClient,
+  GROQ_CONFIG,
+  GROQ_MODEL,
+} from "@/lib/groq";
 
 // ── In-memory cache — persists across requests in the same instance ─
 type CacheEntry = {
@@ -52,10 +58,15 @@ async function fetchExercisesForPlan(
     return cached;
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "Supabase environment variables (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY) are not configured."
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
   const muscleGroups =
     goal === "endurance"
@@ -69,17 +80,23 @@ async function fetchExercisesForPlan(
   };
   const difficulties = difficultyMap[level] ?? ["beginner"];
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("exercises")
     .select("name, muscle_group, equipment, difficulty")
     .in("muscle_group", muscleGroups)
     .in("difficulty", difficulties)
     .order("muscle_group", { ascending: true });
 
+  if (error) {
+    throw new Error(`Failed to fetch exercises from Supabase: ${error.message}`);
+  }
+
   const exercises = data ?? [];
 
-  // Store in cache
-  setCache(cacheKey, exercises);
+  // Only cache non-empty results so transient empty responses aren't sticky
+  if (exercises.length > 0) {
+    setCache(cacheKey, exercises);
+  }
   console.log(`Cache miss: ${cacheKey} — fetched ${exercises.length} exercises`);
 
   return exercises;
@@ -192,14 +209,19 @@ function validateAndCleanPlan(
   );
 
   return plan.map((day) => {
-    if (day.focus.toLowerCase() === "rest") {
+    if (day.focus.toLowerCase().includes("rest")) {
       return { ...day, exercises: ["Full rest day"] };
     }
 
     // Keep only exercises that exist in DB (strip sets/reps for matching)
     const cleanedExercises = day.exercises.filter((ex) => {
       // Extract just the exercise name before the colon
-      const namePart = ex.split(":")[0].replace(/^[-•]\s*/, "").trim().toLowerCase();
+      const namePart = ex
+        .split(":")[0]
+        .replace(/^[-•*]\s*/, "")
+        .replace(/\*\*/g, "")
+        .trim()
+        .toLowerCase();
       return validNames.has(namePart);
     });
 
@@ -217,28 +239,42 @@ function parseAIResponse(text: string): DayPlan[] {
     .trim()
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l !== "");
+    .filter((l) => l !== "" && !l.startsWith("```"));
 
   const plan: DayPlan[] = [];
   let current: DayPlan | null = null;
 
   for (const line of lines) {
-    // Match "Day 1 - Focus Area" or "Day 1 – Focus Area"
-    const dayMatch = line.match(/^Day\s+(\d+)\s*[-–:]\s*(.+)$/i);
+    // Strip optional markdown heading/bold decorators on day headers
+    const normalizedLine = line
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^\*\*(.+)\*\*$/, "$1")
+      .trim();
+
+    // Match "Day 1 - Focus Area", "Day 1 – Focus Area", "Day 1 — Focus Area", or "Day 1: Focus Area"
+    const dayMatch = normalizedLine.match(/^Day\s+(\d+)\s*[-–—:]\s*(.+)$/i);
     if (dayMatch) {
       if (current) plan.push(current);
       current = {
         day:       `Day ${dayMatch[1]}`,
-        focus:     dayMatch[2].trim(),
+        focus:     dayMatch[2].replace(/\*\*/g, "").trim(),
         exercises: [],
       };
       continue;
     }
 
-    // Match exercise lines starting with - or •
+    // Match exercise lines starting with -, •, *, or numbered list item
     if (current && !current.focus.toLowerCase().includes("rest")) {
-      if (line.startsWith("-") || line.startsWith("•") || line.startsWith("*")) {
-        const exercise = line.replace(/^[-•*]\s*/, "").trim();
+      if (
+        line.startsWith("-") ||
+        line.startsWith("•") ||
+        line.startsWith("*") ||
+        /^\d+\.\s+/.test(line)
+      ) {
+        const exercise = line
+          .replace(/^(?:[-•*]|\d+\.)\s*/, "")
+          .replace(/\*\*/g, "")
+          .trim();
         if (exercise.length > 2) current.exercises.push(exercise);
       }
     }
@@ -269,42 +305,48 @@ function parseAIResponse(text: string): DayPlan[] {
 
 // ── Route handler ───────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  let body: { goal?: unknown; level?: unknown };
+  try {
+    body = (await req.json()) as { goal?: unknown; level?: unknown };
+  } catch {
     return NextResponse.json(
-      { error: "GROQ_API_KEY not configured" },
-      { status: 500 }
+      { error: "Invalid JSON request body.", code: "invalid_json" },
+      { status: 400 }
+    );
+  }
+
+  const goal = typeof body?.goal === "string" ? body.goal.trim() : "";
+  const level = typeof body?.level === "string" ? body.level.trim() : "";
+
+  if (!goal || !level) {
+    return NextResponse.json(
+      { error: "goal and level are required", code: "invalid_parameters" },
+      { status: 400 }
     );
   }
 
   try {
-    const { goal, level } = await req.json();
+    // 1 — Validate Groq API key & client before expensive work
+    const groq = getGroqClient();
 
-    if (!goal || !level) {
-      return NextResponse.json(
-        { error: "goal and level are required" },
-        { status: 400 }
-      );
-    }
-
-    // 1 — Fetch exercises
+    // 2 — Fetch exercises
     const exercises = await fetchExercisesForPlan(goal, level);
     if (exercises.length === 0) {
       return NextResponse.json(
-        { error: "No exercises found for this combination" },
+        {
+          error: "No exercises found for this combination",
+          code: "no_exercises_found",
+        },
         { status: 404 }
       );
     }
 
-    // 2 — Build prompt
+    // 3 — Build prompt
     const prompt = buildPrompt(goal, level, exercises);
 
-    // 3 — Call Groq with strict settings
-    const groq = new Groq({ apiKey });
+    // 4 — Call Groq with centralized GPT-OSS 120B config
     const completion = await groq.chat.completions.create({
-      model:       "llama-3.3-70b-versatile",
-      temperature: 0.3, // low = consistent structure
-      max_tokens:  1200,
+      ...GROQ_CONFIG.workout,
       messages: [
         {
           role:    "system",
@@ -317,37 +359,74 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "";
+    const { text: raw, finishReason } = extractCompletionText(completion);
 
-    if (!raw.trim()) {
+    if (!raw) {
+      console.error("Workout Generator empty completion:", {
+        model: completion.model ?? GROQ_MODEL,
+        finishReason,
+        usage: completion.usage,
+      });
+
       return NextResponse.json(
-        { error: "AI returned empty response" },
-        { status: 500 }
+        {
+          error:
+            finishReason === "length"
+              ? "Workout plan generation was truncated before completion (finish_reason: length). Please try again."
+              : "AI returned empty response",
+          code: finishReason === "length" ? "token_limit_reached" : "empty_completion",
+          model: GROQ_MODEL,
+        },
+        { status: 502 }
       );
     }
 
-    // 4 — Parse and validate
-    const parsed   = parseAIResponse(raw);
+    // 5 — Parse and validate
+    const parsed    = parseAIResponse(raw);
     const validated = validateAndCleanPlan(parsed, exercises);
 
-    // 5 — Sanity check — at least 3 training days
+    // 6 — Sanity check — at least 2 training days
     const trainingDays = validated.filter(
       (d) => !d.focus.toLowerCase().includes("rest")
     );
 
     if (trainingDays.length < 2) {
-      console.error("Plan parsing failed. Raw output:\n", raw);
+      console.error("Plan parsing failed.", {
+        model: completion.model ?? GROQ_MODEL,
+        finishReason,
+        rawPreview: raw.slice(0, 500),
+      });
       return NextResponse.json(
-        { error: "Plan generation failed — please try again" },
-        { status: 500 }
+        {
+          error: "Plan generation failed — AI output could not be parsed into a valid weekly schedule. Please try again.",
+          code: "plan_parse_failed",
+          model: GROQ_MODEL,
+        },
+        { status: 502 }
       );
     }
 
     return NextResponse.json({ plan: validated });
 
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Workout API error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const formatted = formatGroqError(err, "Workout Generator");
+    console.error("Workout API error:", {
+      status: formatted.status,
+      code: formatted.code,
+      model: formatted.model,
+      upstreamStatus: formatted.upstreamStatus,
+      message: formatted.error,
+    });
+    return NextResponse.json(
+      {
+        error: formatted.error,
+        code: formatted.code,
+        model: formatted.model,
+        ...(formatted.upstreamStatus !== undefined
+          ? { upstreamStatus: formatted.upstreamStatus }
+          : {}),
+      },
+      { status: formatted.status }
+    );
   }
 }

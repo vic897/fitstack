@@ -40,7 +40,7 @@ FitStack is a full-stack fitness platform built with Next.js, Supabase, and Groq
 - One-click to send your BMI result directly to the AI Coach
 
 ### 🤖 AI Gym Coach
-- Chat interface powered by Groq (llama-3.3-70b-versatile)
+- Chat interface powered by Groq (openai/gpt-oss-120b)
 - Knows your goal, training level, and latest logged weight
 - Pre-filled queries from BMI calculator and workout generator
 - Suggested questions for new users
@@ -74,7 +74,7 @@ FitStack is a full-stack fitness platform built with Next.js, Supabase, and Groq
 | Styling | Tailwind CSS |
 | Database | Supabase (PostgreSQL) |
 | Auth | Supabase Auth |
-| AI | Groq API — llama-3.3-70b-versatile |
+| AI | Groq API — openai/gpt-oss-120b |
 | Deployment | Vercel |
 
 ---
@@ -125,7 +125,7 @@ fitstack/
 │   │   ├── client.ts              # Browser Supabase client
 │   │   ├── server.ts              # Server Supabase client
 │   │   └── types.ts               # Shared TypeScript types
-│   └── groq.ts                    # Groq client initialisation
+│   └── groq.ts                    # Centralized Groq client & model configuration
 ├── middleware.ts                   # Session refresh + route protection
 └── README.md
 ```

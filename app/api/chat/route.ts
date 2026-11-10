@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import {
+  extractCompletionText,
+  formatGroqError,
+  getGroqClient,
+  GROQ_CONFIG,
+  GROQ_MODEL,
+} from "@/lib/groq";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -59,51 +65,110 @@ Guidelines:
 - If you know their weight, you can use it to give more specific advice (e.g. protein targets)${userBlock}`;
 }
 
-export async function POST(req: NextRequest) {
-  const apiKey = process.env.GROQ_API_KEY;
+function sanitizeMessages(input: unknown): ChatMessage[] | null {
+  if (!Array.isArray(input) || input.length === 0) {
+    return null;
+  }
 
-  if (!apiKey) {
+  const sanitized: ChatMessage[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") return null;
+    const candidate = item as { role?: unknown; content?: unknown };
+    if (
+      (candidate.role !== "user" && candidate.role !== "assistant") ||
+      typeof candidate.content !== "string" ||
+      candidate.content.trim().length === 0
+    ) {
+      return null;
+    }
+    // Strip any extra properties (e.g. reasoning fields) for strict GPT-OSS compatibility
+    sanitized.push({
+      role: candidate.role,
+      content: candidate.content.trim(),
+    });
+  }
+
+  return sanitized;
+}
+
+export async function POST(req: NextRequest) {
+  let body: { messages?: unknown; context?: UserContext };
+  try {
+    body = (await req.json()) as { messages?: unknown; context?: UserContext };
+  } catch {
     return NextResponse.json(
-      { error: "GROQ_API_KEY is not configured." },
-      { status: 500 }
+      { error: "Invalid JSON request body.", code: "invalid_json" },
+      { status: 400 }
     );
   }
 
-  const groq = new Groq({ apiKey });
+  const messages = sanitizeMessages(body?.messages);
+  if (!messages) {
+    return NextResponse.json(
+      {
+        error: "messages array is required and must contain valid user/assistant messages.",
+        code: "invalid_messages",
+      },
+      { status: 400 }
+    );
+  }
 
   try {
-    const { messages, context } = (await req.json()) as {
-      messages: ChatMessage[];
-      context?: UserContext;
-    };
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json(
-        { error: "messages array is required" },
-        { status: 400 }
-      );
-    }
-
-    const systemPrompt = buildSystemPrompt(context ?? {});
+    const groq = getGroqClient();
+    const safeContext =
+      body.context && typeof body.context === "object" ? body.context : {};
+    const systemPrompt = buildSystemPrompt(safeContext);
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      ...GROQ_CONFIG.chat,
       messages: [
         { role: "system", content: systemPrompt },
         ...messages,
       ],
-      temperature: 0.7,
-      max_tokens: 512,
     });
 
-    const reply =
-      completion.choices[0]?.message?.content ??
-      "Sorry, I couldn't generate a response. Please try again.";
+    const { text, finishReason } = extractCompletionText(completion);
 
-    return NextResponse.json({ reply });
+    if (!text) {
+      console.error("AI Coach empty completion:", {
+        model: completion.model ?? GROQ_MODEL,
+        finishReason,
+        usage: completion.usage,
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            finishReason === "length"
+              ? "AI Coach response was truncated before completion (finish_reason: length). Please try again."
+              : "AI Coach returned an empty response. Please try again.",
+          code: finishReason === "length" ? "token_limit_reached" : "empty_completion",
+          model: GROQ_MODEL,
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ reply: text });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Groq API error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const formatted = formatGroqError(err, "AI Coach");
+    console.error("AI Coach Groq API error:", {
+      status: formatted.status,
+      code: formatted.code,
+      model: formatted.model,
+      upstreamStatus: formatted.upstreamStatus,
+      message: formatted.error,
+    });
+    return NextResponse.json(
+      {
+        error: formatted.error,
+        code: formatted.code,
+        model: formatted.model,
+        ...(formatted.upstreamStatus !== undefined
+          ? { upstreamStatus: formatted.upstreamStatus }
+          : {}),
+      },
+      { status: formatted.status }
+    );
   }
 }
