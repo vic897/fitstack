@@ -44,3 +44,6 @@ next-env.d.ts
 
 # seed scripts (contain hardcoded keys)
 /scripts/
+
+# local design reference archives
+/redesign_reference/

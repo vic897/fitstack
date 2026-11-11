@@ -1,96 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
+import DietGoalSelector from "@/components/diet/DietGoalSelector";
+import MealPlanSection, {
+  type DietPlan,
+} from "@/components/diet/MealPlanSection";
+import { NUTRITION_PRINCIPLES } from "@/components/diet/dietConfig";
 
-// ── Types ──────────────────────────────────────────────────────
-type Meal = {
-  name: string;
-  items: string[];
-};
-
-type Plan = {
-  label: string;
-  tip: string;
-  meals: Meal[];
-};
-
-type Goal = {
-  value: string;
-  label: string;
-  icon: string;
-  desc: string;
-  borderActive: string;
-  bgActive: string;
-  textActive: string;
-  tipBorder: string;
-  tipBg: string;
-};
-
-// ── Config ─────────────────────────────────────────────────────
-const goals: Goal[] = [
-  {
-    value: "muscle-gain",
-    label: "Muscle Gain",
-    icon: "💪",
-    desc: "Eat more to grow more",
-    borderActive: "border-green-400",
-    bgActive: "bg-green-400/10",
-    textActive: "text-green-400",
-    tipBorder: "border-green-400/30",
-    tipBg: "bg-green-400/8",
-  },
-  {
-    value: "fat-loss",
-    label: "Fat Loss",
-    icon: "🔥",
-    desc: "Eat smart, stay lean",
-    borderActive: "border-orange-400",
-    bgActive: "bg-orange-400/10",
-    textActive: "text-orange-400",
-    tipBorder: "border-orange-400/30",
-    tipBg: "bg-orange-400/8",
-  },
-];
-
-const mealIcons: Record<string, string> = {
-  Breakfast: "🌅",
-  Lunch: "☀️",
-  Dinner: "🌙",
-  Snack: "🍎",
-};
-
-const principles = [
-  {
-    icon: "🥩",
-    title: "Prioritise protein",
-    desc: "Aim for protein in every meal. It keeps you full and preserves muscle.",
-  },
-  {
-    icon: "💧",
-    title: "Stay hydrated",
-    desc: "Drink at least 2–3 litres of water daily. More on training days.",
-  },
-  {
-    icon: "🚫",
-    title: "Limit processed food",
-    desc: "Cut out ultra-processed snacks. Whole foods give better energy.",
-  },
-  {
-    icon: "😴",
-    title: "Sleep to recover",
-    desc: "Nutrition works best with 7–9 hours of sleep. Don't skip recovery.",
-  },
-];
-
-// ── Page ───────────────────────────────────────────────────────
 export default function DietPage() {
   const [goal, setGoal] = useState<string | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [plan, setPlan] = useState<DietPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const selectedGoal = goals.find((g) => g.value === goal);
 
   async function fetchPlan(selectedGoal: string) {
     setGoal(selectedGoal);
@@ -105,9 +29,11 @@ export default function DietPage() {
         body: JSON.stringify({ goal: selectedGoal }),
       });
 
-      if (!res.ok) throw new Error("Failed to fetch plan");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.plan) {
+        throw new Error(data?.error ?? "Failed to fetch plan");
+      }
 
-      const data = await res.json();
       setPlan(data.plan);
     } catch (err) {
       console.error(err);
@@ -118,169 +44,160 @@ export default function DietPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="relative flex min-h-screen flex-col overflow-x-clip bg-surface text-on-surface">
       <Navbar />
 
-      <div className="mx-auto max-w-4xl px-6 pt-28 pb-24">
+      {/* Atmospheric Background Lighting */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      >
+        <div className="absolute -top-40 left-1/2 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-gradient-to-b from-primary/10 via-primary-container/5 to-transparent blur-3xl" />
+        <div className="absolute -right-60 top-1/3 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
+      </div>
 
-        {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">
-            Diet <span className="text-green-400">Guide</span>
-          </h1>
-          <p className="mt-2 text-gray-400">
-            Simple meal plans matched to your fitness goal. No calorie
-            counting — just clarity.
-          </p>
-        </div>
+      <main className="relative z-10 w-full flex-1 pt-16">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-space-xl px-margin-mobile py-space-xl sm:px-margin">
+          {/* Hero Header Section */}
+          <section className="flex flex-col items-center space-y-space-md pt-space-xs text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-outline-variant/25 bg-surface-container-high/80 px-3.5 py-1.5 shadow-md">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-80" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              </span>
+              <span className="font-label-sm text-label-sm font-bold uppercase tracking-widest text-primary">
+                Nutrition Guidance — FitStack 2.0
+              </span>
+            </div>
 
-        {/* Goal toggle */}
-        <div className="mb-10 grid gap-4 sm:grid-cols-2">
-          {goals.map((g) => {
-            const isActive = goal === g.value;
-            return (
-              <button
-                key={g.value}
-                onClick={() => fetchPlan(g.value)}
-                className={`flex items-center gap-4 rounded-2xl border p-6 text-left transition-all ${
-                  isActive
-                    ? `${g.borderActive} ${g.bgActive}`
-                    : "border-white/10 bg-white/5 hover:border-white/20"
-                }`}
-              >
-                <span className="text-4xl">{g.icon}</span>
-                <div>
-                  <div className="font-bold">{g.label}</div>
-                  <div className="mt-0.5 text-sm text-gray-500">{g.desc}</div>
-                </div>
-                {isActive && (
-                  <span className={`ml-auto text-xs font-bold ${g.textActive}`}>
-                    Selected ✓
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Loading spinner */}
-        {loading && (
-          <div className="mb-8 flex items-center gap-3 text-sm text-gray-400">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
-            Loading your meal plan…
-          </div>
-        )}
-
-        {/* Error state */}
-        {error && (
-          <div className="mb-8 rounded-2xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-
-        {/* Plan output */}
-        {plan && selectedGoal && !loading && (
-          <div>
-            {/* Tip banner */}
-            <div
-              className={`mb-8 rounded-2xl border p-5 ${selectedGoal.tipBorder} ${selectedGoal.tipBg}`}
-            >
-              <p className={`text-sm font-bold ${selectedGoal.textActive}`}>
-                {selectedGoal.icon} {plan.label} tip
+            <div className="max-w-3xl space-y-3">
+              <h1 className="font-headline-xl text-headline-xl-mobile tracking-tight text-on-surface sm:text-headline-xl">
+                Fuel Your{" "}
+                <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                  Progress.
+                </span>
+              </h1>
+              <p className="mx-auto max-w-2xl font-body-lg text-body-lg leading-relaxed text-on-surface-variant">
+                Simple meal plans matched to your fitness goal. No calorie
+                counting — just clarity.
               </p>
-              <p className="mt-1 text-sm text-gray-300">{plan.tip}</p>
             </div>
 
-            {/* Meal cards */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-2">
-              {plan.meals.map((meal) => (
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <div className="flex items-center gap-1.5 rounded-full border border-outline-variant/20 bg-surface-container-low px-3 py-1 font-label-md text-label-md text-on-surface-variant">
+                <span className="material-symbols-outlined text-[15px] text-primary">
+                  verified
+                </span>
+                <span>Goal-Matched Meal Templates</span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full border border-outline-variant/20 bg-surface-container-low px-3 py-1 font-label-md text-label-md text-on-surface-variant">
+                <span className="material-symbols-outlined text-[15px] text-primary">
+                  restaurant
+                </span>
+                <span>Whole-Food Focused</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Goal Selection & Active Strategy Tip */}
+          <DietGoalSelector
+            activeGoal={goal}
+            loading={loading}
+            tip={plan?.tip}
+            planLabel={plan?.label}
+            onSelectGoal={fetchPlan}
+          />
+
+          {/* Meal Plan Output / Loading / Error / Initial Empty State */}
+          <MealPlanSection
+            goal={goal}
+            plan={plan}
+            loading={loading}
+            error={error}
+            onRetry={() => {
+              if (goal) void fetchPlan(goal);
+            }}
+          />
+
+          {/* Core Nutrition Principles — Always Visible */}
+          <section className="flex flex-col gap-space-md">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+                <h2 className="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">
+                  Core Nutrition Principles
+                </h2>
+              </div>
+              <span className="hidden font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant sm:inline">
+                Daily Fundamentals
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-space-md sm:grid-cols-2 lg:grid-cols-4">
+              {NUTRITION_PRINCIPLES.map((p) => (
                 <div
-                  key={meal.name}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-6"
+                  key={p.title}
+                  className="flex flex-col gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low p-space-md shadow-md transition-all duration-300 hover:border-outline-variant/40 hover:bg-surface-container"
                 >
-                  {/* Meal header */}
-                  <div className="mb-4 flex items-center gap-3">
-                    <span className="text-2xl">
-                      {mealIcons[meal.name] ?? "🍽️"}
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container-high shadow-sm ${p.iconColorClass}`}
+                  >
+                    <span className="material-symbols-outlined text-[24px]">
+                      {p.icon}
                     </span>
-                    <h3 className="font-bold">{meal.name}</h3>
                   </div>
-
-                  {/* Items */}
-                  <ul className="space-y-2">
-                    {meal.items.map((item, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-2 text-sm text-gray-300"
-                      >
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-green-400/60" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-
-            {/* Disclaimer */}
-            <p className="mb-10 text-xs text-gray-600">
-              * These are sample meal ideas, not a personalised nutrition plan.
-              Adjust portions to your body size and hunger levels. Consult a
-              nutritionist for tailored advice.
-            </p>
-          </div>
-        )}
-
-        {/* Empty state — no goal selected yet */}
-        {!goal && !loading && (
-          <div className="mb-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-16 text-center">
-            <span className="mb-4 text-5xl">🥗</span>
-            <h3 className="mb-1 font-bold">Choose your goal above</h3>
-            <p className="text-sm text-gray-500">
-              Your meal plan will appear here.
-            </p>
-          </div>
-        )}
-
-        {/* Principles — always visible */}
-        <div>
-          <h2 className="mb-6 text-xl font-black">
-            Core nutrition{" "}
-            <span className="text-green-400">principles</span>
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {principles.map((p) => (
-              <div
-                key={p.title}
-                className="flex gap-4 rounded-2xl border border-white/10 bg-white/5 p-5"
-              >
-                <span className="mt-0.5 text-2xl">{p.icon}</span>
-                <div>
-                  <h4 className="mb-1 text-sm font-bold">{p.title}</h4>
-                  <p className="text-xs leading-relaxed text-gray-500">
+                  <h3 className="font-title-lg text-title-lg font-semibold text-on-surface">
+                    {p.title}
+                  </h3>
+                  <p className="font-body-md text-body-md leading-relaxed text-on-surface-variant">
                     {p.desc}
                   </p>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              ))}
+            </div>
+          </section>
 
-        {/* Coach CTA */}
-        <div className="mt-12 rounded-2xl border border-green-400/20 bg-green-400/5 p-6 text-center">
-          <p className="font-bold">Have diet questions?</p>
-          <p className="mt-1 text-sm text-gray-400">
-            Your AI coach can answer anything about nutrition, meal timing,
-            supplements, and more.
-          </p>
-           <a
-            href="/coach"
-            className="mt-5 inline-block rounded-full bg-green-400 px-8 py-3 text-sm font-bold text-gray-950 transition-opacity hover:opacity-90"
-          >
-            Ask the AI Coach →
-          </a>
+          {/* AI Coach CTA Banner */}
+          <section className="relative overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container-high p-space-lg shadow-2xl md:p-space-xl">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-20 -right-20 h-80 w-80 rounded-full bg-primary/10 blur-3xl"
+            />
+
+            <div className="relative z-10 flex flex-col justify-between gap-space-lg lg:flex-row lg:items-center">
+              <div className="max-w-2xl space-y-3">
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/25 bg-surface-container-lowest px-3 py-1 font-label-sm text-label-sm font-bold uppercase tracking-wider text-primary shadow-sm">
+                  <span className="material-symbols-outlined text-[15px]">
+                    auto_awesome
+                  </span>
+                  <span>AI Gym &amp; Nutrition Coach</span>
+                </div>
+                <h2 className="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">
+                  Have diet questions?
+                </h2>
+                <p className="font-body-lg text-body-lg text-on-surface-variant">
+                  Your AI coach can answer anything about nutrition, meal
+                  timing, supplements, and more.
+                </p>
+              </div>
+
+              <div className="shrink-0">
+                <Link
+                  href="/coach"
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-space-lg py-3.5 font-title-lg text-title-lg font-bold text-on-primary shadow-[0_0_24px_rgba(78,222,163,0.35)] transition-all duration-300 hover:scale-105 hover:bg-primary-fixed active:scale-95"
+                >
+                  <span>Ask the AI Coach</span>
+                  <span className="material-symbols-outlined text-[20px]">
+                    arrow_forward
+                  </span>
+                </Link>
+              </div>
+            </div>
+          </section>
         </div>
-      </div>
+      </main>
+
+      <Footer />
     </div>
   );
 }

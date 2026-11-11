@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -27,18 +28,41 @@ export async function middleware(request: NextRequest) {
     );
 
     // Refresh session — do not remove this
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const pathname = request.nextUrl.pathname;
 
     // Protected routes
     const protectedPaths = ["/my-workouts", "/progress"];
     const isProtected = protectedPaths.some((path) =>
-      request.nextUrl.pathname.startsWith(path)
+      pathname.startsWith(path)
     );
 
     if (isProtected && !user) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("redirectTo", request.nextUrl.pathname);
+      const safeTarget = sanitizeRedirectPath(
+        `${pathname}${request.nextUrl.search}`,
+        "/"
+      );
+      url.searchParams.set("redirectTo", safeTarget);
+      return NextResponse.redirect(url);
+    }
+
+    // Redirect already-authenticated users away from auth pages
+    const authPaths = ["/login", "/signup"];
+    const isAuthRoute = authPaths.some(
+      (path) => pathname === path || pathname.startsWith(`${path}/`)
+    );
+
+    if (isAuthRoute && user) {
+      const safeTarget = sanitizeRedirectPath(
+        request.nextUrl.searchParams.get("redirectTo"),
+        "/"
+      );
+      const url = new URL(safeTarget, request.url);
       return NextResponse.redirect(url);
     }
   } catch (e) {

@@ -1,44 +1,96 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
-import { logProgress, getMyProgress, deleteProgress } from "@/lib/db/progress";
+import { ProgressLoggerAndHistory } from "@/components/progress/ProgressLoggerAndHistory";
+import { ProgressSummaryCards } from "@/components/progress/ProgressSummaryCards";
+import {
+  computeProgressStats,
+  type ProgressRange,
+  type ProgressSortOrder,
+} from "@/components/progress/progressUtils";
+import { WeightChartCard } from "@/components/progress/WeightChartCard";
 import { useToast } from "@/components/ui/Toast";
+import {
+  deleteProgress,
+  getMyProgress,
+  logProgress,
+} from "@/lib/db/progress";
 import type { Progress } from "@/lib/supabase/types";
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function getBmiCategory(bmi: number) {
-  if (bmi < 18.5) return { label: "Underweight", color: "text-blue-400" };
-  if (bmi < 25)   return { label: "Normal",       color: "text-green-400" };
-  if (bmi < 30)   return { label: "Overweight",   color: "text-yellow-400" };
-  return             { label: "Obese",            color: "text-red-400" };
-}
-
 export default function ProgressPage() {
-  const [entries, setEntries]   = useState<Progress[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [weight, setWeight]     = useState("");
-  const [note, setNote]         = useState("");
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [entries, setEntries] = useState<Progress[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [weight, setWeight] = useState("");
+  const [note, setNote] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [range, setRange] = useState<ProgressRange>("all");
+  const [sortOrder, setSortOrder] = useState<ProgressSortOrder>("newest");
+
   const { showToast, ToastComponent } = useToast();
 
   useEffect(() => {
+    let active = true;
+
     async function load() {
+      try {
+        const { data, error } = await getMyProgress();
+        if (!active) return;
+
+        if (error) {
+          setLoadError(error);
+          showToast(error, "error");
+        } else {
+          setLoadError(null);
+          setEntries(data);
+        }
+      } catch (err) {
+        if (!active) return;
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Unable to load progress history.";
+        setLoadError(message);
+        showToast(message, "error");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [showToast]);
+
+  async function handleRetry() {
+    setLoading(true);
+    setLoadError(null);
+
+    try {
       const { data, error } = await getMyProgress();
-      if (error) showToast(error, "error");
-      setEntries(data);
+      if (error) {
+        setLoadError(error);
+        showToast(error, "error");
+      } else {
+        setEntries(data);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load progress history.";
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
       setLoading(false);
     }
-    load();
-  }, []);
+  }
 
   async function handleLog() {
     const w = parseFloat(weight);
@@ -48,164 +100,114 @@ export default function ProgressPage() {
     }
 
     setSaving(true);
-    const { data, error } = await logProgress(w, note || undefined);
-    if (error) {
-      showToast(error, "error");
-    } else if (data) {
-      setEntries((prev) => [data, ...prev]);
-      setWeight("");
-      setNote("");
-      showToast("Weight logged!", "success");
+    try {
+      const trimmedNote = note.trim();
+      const { data, error } = await logProgress(w, trimmedNote || undefined);
+      if (error) {
+        showToast(error, "error");
+      } else if (data) {
+        setEntries((prev) => [data, ...prev]);
+        setWeight("");
+        setNote("");
+        setLoadError(null);
+        showToast("Weight logged!", "success");
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to save weight entry.";
+      showToast(message, "error");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    setDeleting(id);
-    const { error } = await deleteProgress(id);
-    if (error) {
+    setDeletingId(id);
+    try {
+      const { error } = await deleteProgress(id);
+      if (error) {
+        showToast("Failed to delete entry.", "error");
+      } else {
+        setEntries((prev) => prev.filter((e) => e.id !== id));
+      }
+    } catch {
       showToast("Failed to delete entry.", "error");
-    } else {
-      setEntries((prev) => prev.filter((e) => e.id !== id));
+    } finally {
+      setDeletingId(null);
     }
-    setDeleting(null);
   }
 
-  // Simple trend — difference between latest and oldest entry
-  const trend = entries.length >= 2
-    ? (entries[0].weight - entries[entries.length - 1].weight).toFixed(1)
-    : null;
+  const stats = computeProgressStats(entries);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="relative min-h-screen flex flex-col overflow-x-clip bg-[#111418] text-[#e1e2e8] selection:bg-[#4edea3]/30 selection:text-[#6ffbbe]">
       <Navbar />
       {ToastComponent}
 
-      <div className="mx-auto max-w-2xl px-6 pt-28 pb-24">
-        {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">
-            Progress <span className="text-green-400">Tracker</span>
-          </h1>
-          <p className="mt-2 text-gray-400">
-            Log your weight over time. See your trend.
-          </p>
-        </div>
+      {/* Ambient Background Lighting */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-[420px] w-[780px] rounded-full bg-[#10b981]/[0.07] blur-[140px]" />
+        <div className="absolute bottom-0 right-0 h-[360px] w-[420px] rounded-full bg-[#4edea3]/[0.04] blur-[140px]" />
+      </div>
 
-        {/* Log weight form */}
-        <div className="mb-10 rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h2 className="mb-5 font-bold">Log today's weight</h2>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <input
-                type="number"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                placeholder="Weight in kg"
-                min={20}
-                max={300}
-                step={0.1}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition focus:border-green-400/50 focus:ring-1 focus:ring-green-400/20"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-gray-500">
-                kg
-              </span>
-            </div>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Optional note"
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition focus:border-green-400/50 focus:ring-1 focus:ring-green-400/20"
+      <main className="relative z-10 flex-1 w-full max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-20">
+        {/* Hero Header */}
+        <header className="mb-8">
+          <div className="inline-flex items-center gap-2 rounded-full bg-[#4edea3]/10 border border-[#4edea3]/25 px-3 py-1 mb-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#4edea3] animate-pulse" />
+            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#4edea3]">
+              Progress Analytics
+            </span>
+          </div>
+
+          <h1 className="font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-[#e1e2e8]">
+            Progress{" "}
+            <span className="bg-gradient-to-r from-[#4edea3] to-[#6ffbbe] bg-clip-text text-transparent">
+              Dashboard
+            </span>
+          </h1>
+          <p className="mt-2.5 max-w-2xl text-sm sm:text-base text-[#bbcabf]/85">
+            Record weigh-ins, review historical changes, and monitor your body weight trajectory from your real saved logs.
+          </p>
+        </header>
+
+        {/* Top Metric Summary Cards */}
+        <ProgressSummaryCards stats={stats} loading={loading} />
+
+        {/* Asymmetric 8 / 4 Analytics + Logger Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="lg:col-span-7 xl:col-span-8">
+            <WeightChartCard
+              entries={entries}
+              loading={loading}
+              range={range}
+              onRangeChange={setRange}
             />
           </div>
-          <button
-            onClick={handleLog}
-            disabled={saving || !weight}
-            className="mt-4 w-full rounded-full bg-green-400 py-3 text-sm font-bold text-gray-950 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            {saving ? "Saving…" : "Log Weight →"}
-          </button>
+
+          <div className="lg:col-span-5 xl:col-span-4">
+            <ProgressLoggerAndHistory
+              entries={entries}
+              loading={loading}
+              loadError={loadError}
+              saving={saving}
+              deletingId={deletingId}
+              weight={weight}
+              note={note}
+              sortOrder={sortOrder}
+              latestWeight={stats.latest?.weight ?? null}
+              onWeightChange={setWeight}
+              onNoteChange={setNote}
+              onSortOrderChange={setSortOrder}
+              onLog={handleLog}
+              onDelete={handleDelete}
+              onRetry={handleRetry}
+            />
+          </div>
         </div>
+      </main>
 
-        {/* Trend summary */}
-        {entries.length >= 2 && trend && (
-          <div className="mb-8 grid grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-              <div className="text-2xl font-black text-green-400">
-                {entries[0].weight}
-              </div>
-              <div className="mt-1 text-xs text-gray-500">Latest (kg)</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-              <div className={`text-2xl font-black ${
-                parseFloat(trend) < 0 ? "text-green-400" :
-                parseFloat(trend) > 0 ? "text-red-400" : "text-gray-400"
-              }`}>
-                {parseFloat(trend) > 0 ? "+" : ""}{trend}
-              </div>
-              <div className="mt-1 text-xs text-gray-500">Change (kg)</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-              <div className="text-2xl font-black text-white">
-                {entries.length}
-              </div>
-              <div className="mt-1 text-xs text-gray-500">Entries</div>
-            </div>
-          </div>
-        )}
-
-        {/* Entry list */}
-        {loading && (
-          <div className="flex items-center gap-3 text-sm text-gray-400">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
-            Loading entries…
-          </div>
-        )}
-
-        {!loading && entries.length === 0 && (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-16 text-center">
-            <div className="mb-4 text-5xl">⚖️</div>
-            <h3 className="mb-1 font-bold">No entries yet</h3>
-            <p className="text-sm text-gray-500">
-              Log your first weight above to start tracking.
-            </p>
-          </div>
-        )}
-
-        {!loading && entries.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="mb-4 font-bold text-gray-300">History</h2>
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-5 py-4"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="text-lg font-black text-green-400">
-                    {entry.weight} kg
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-300">
-                      {formatDate(entry.date)}
-                    </div>
-                    {entry.note && (
-                      <div className="text-xs text-gray-500">{entry.note}</div>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleDelete(entry.id)}
-                  disabled={deleting === entry.id}
-                  className="text-xs text-gray-600 transition-colors hover:text-red-400 disabled:opacity-40"
-                >
-                  {deleting === entry.id ? "..." : "✕"}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <Footer />
     </div>
   );
 }
